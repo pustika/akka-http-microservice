@@ -72,7 +72,7 @@ trait Service extends Protocols {
 
   lazy val ipApiConnectionFlow: Flow[HttpRequest, HttpResponse, Any] =
     Http().outgoingConnection(config.getString("services.ip-api.host"), config.getInt("services.ip-api.port"))
-  
+
   // Please note that using `Source.single(request).via(pool).runWith(Sink.head)` is considered anti-pattern. It's here only for the simplicity.
   // See why and how to improve it here: https://github.com/theiterators/akka-http-microservice/issues/32
   def ipApiRequest(request: HttpRequest): Future[HttpResponse] = Source.single(request).via(ipApiConnectionFlow).runWith(Sink.head)
@@ -82,11 +82,11 @@ trait Service extends Protocols {
       response.status match {
         case OK =>
           Unmarshal(response.entity).to[IpApiResponse].map { ipApiResponse =>
-          ipApiResponse.status match {
-            case IpApiResponseStatus.Success => IpInfo(ipApiResponse.query,ipApiResponse.country, ipApiResponse.city, ipApiResponse.lat, ipApiResponse.lon)
-            case IpApiResponseStatus.Fail => s"""ip-api request failed with message: ${ipApiResponse.message.getOrElse("")}"""
+            ipApiResponse.status match {
+              case IpApiResponseStatus.Success => IpInfo(ipApiResponse.query,ipApiResponse.country, ipApiResponse.city, ipApiResponse.lat, ipApiResponse.lon)
+              case IpApiResponseStatus.Fail => s"""ip-api request failed with message: ${ipApiResponse.message.getOrElse("")}"""
+            }
           }
-        }
         case _ => Unmarshal(response.entity).to[String].flatMap { entity =>
           val error = s"ip-api request failed with status code ${response.status} and entity $entity"
           logger.error(error)
@@ -107,16 +107,24 @@ trait Service extends Protocols {
             }
           }
         } ~
-        (post & entity(as[IpPairSummaryRequest])) { ipPairSummaryRequest =>
-          complete {
-            val ip1InfoFuture = fetchIpInfo(ipPairSummaryRequest.ip1)
-            val ip2InfoFuture = fetchIpInfo(ipPairSummaryRequest.ip2)
-            ip1InfoFuture.zip(ip2InfoFuture).map[ToResponseMarshallable] {
-              case (info1: IpInfo, info2: IpInfo) => IpPairSummary(info1, info2)
-              case (errorMessage: String, _) => BadRequest -> errorMessage
-              case (_, errorMessage: String) => BadRequest -> errorMessage
+          (post & entity(as[IpPairSummaryRequest])) { ipPairSummaryRequest =>
+            complete {
+              val ip1InfoFuture = fetchIpInfo(ipPairSummaryRequest.ip1)
+              val ip2InfoFuture = fetchIpInfo(ipPairSummaryRequest.ip2)
+              ip1InfoFuture.zip(ip2InfoFuture).map[ToResponseMarshallable] {
+                case (info1: IpInfo, info2: IpInfo) => IpPairSummary(info1, info2)
+                case (errorMessage: String, _) => BadRequest -> errorMessage
+                case (_, errorMessage: String) => BadRequest -> errorMessage
+              }
             }
           }
+      }
+    }
+    logRequestResult("akka-http-microservice") {
+      pathPrefix("check") {
+        (get)
+        complete {
+          OK
         }
       }
     }
